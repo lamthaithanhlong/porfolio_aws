@@ -1,0 +1,98 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Frontend stack for hosting portfolio website with manual file upload to S3 and CloudFront.
+
+Parameters:
+  DomainName:
+    Type: String
+    Description: The domain name for the website (e.g., example.com)
+    Default: "longltt-portfolio.com"
+
+  CertificateArn:
+    Type: String
+    Description: The ARN of the ACM certificate for the CloudFront distribution (must be in us-east-1)
+
+Resources:
+  # S3 Bucket for Static Website Hosting with Unique Name
+  WebsiteBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${DomainName}-website-${AWS::StackName}-${AWS::Region}-${AWS::AccountId}"
+      WebsiteConfiguration:
+        IndexDocument: index.html
+        ErrorDocument: error.html
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: false
+        BlockPublicPolicy: false
+        IgnorePublicAcls: false
+        RestrictPublicBuckets: false
+    DeletionPolicy: Retain  # Retain bucket when stack is deleted
+
+  # S3 Bucket Policy to Allow Public Access
+  WebsiteBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref WebsiteBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: PublicReadGetObject
+            Effect: Allow
+            Principal: "*"
+            Action: "s3:GetObject"
+            Resource: !Sub "arn:aws:s3:::${WebsiteBucket}/*"
+
+  # CloudFront Distribution for Global Content Delivery
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Origins:
+          - DomainName: !GetAtt WebsiteBucket.DomainName
+            Id: S3Origin
+            S3OriginConfig:
+              OriginAccessIdentity: ""
+        Enabled: true
+        DefaultRootObject: index.html
+        ViewerCertificate:
+          AcmCertificateArn: !Ref CertificateArn
+          SslSupportMethod: sni-only
+        Aliases:
+          - !Ref DomainName  # Custom domain for CloudFront
+        DefaultCacheBehavior:
+          TargetOriginId: S3Origin
+          ViewerProtocolPolicy: redirect-to-https  # Redirect HTTP to HTTPS
+          AllowedMethods: [ "GET", "HEAD", "OPTIONS" ]
+          CachedMethods: [ "GET", "HEAD" ]
+          ForwardedValues:
+            QueryString: false
+            Cookies:
+              Forward: none
+        PriceClass: PriceClass_100  # Use the lowest pricing class (US, Europe, Asia)
+
+  # Route 53 A Record to Point Domain to CloudFront
+  WebsiteAliasRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !ImportValue "network-HostedZoneId"  # Import Hosted Zone ID from the Networking Stack
+      Name: !Ref DomainName
+      Type: A
+      AliasTarget:
+        HostedZoneId: "Z2FDTNDATAQYW2"  # CloudFront Hosted Zone ID (for CloudFront globally)
+        DNSName: !GetAtt CloudFrontDistribution.DomainName
+
+Outputs:
+  WebsiteBucketName:
+    Description: The name of the S3 bucket hosting the website
+    Value: !Ref WebsiteBucket
+    Export:
+      Name: !Sub "${AWS::StackName}-WebsiteBucketName"
+
+  CloudFrontDistributionId:
+    Description: The ID of the CloudFront distribution
+    Value: !Ref CloudFrontDistribution
+    Export:
+      Name: !Sub "${AWS::StackName}-CloudFrontDistributionId"
+
+  WebsiteURL:
+    Description: The CloudFront URL for the website
+    Value: !GetAtt CloudFrontDistribution.DomainName

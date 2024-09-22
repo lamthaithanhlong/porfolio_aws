@@ -1,0 +1,34 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: CloudFormation template for setting up the Route 53 Hosted Zone for the website
+
+Parameters:
+  DomainName:
+    Type: String
+    Description: "The domain name for the website (e.g., example.com)"
+    Default: "longltt-portfolio.com"  # Default value set to the desired domain name
+
+Resources:
+  # Route 53 Hosted Zone
+  HostedZone:
+    Type: AWS::Route53::HostedZone
+    Properties:
+      Name: !Ref DomainName
+
+Outputs:
+  HostedZoneId:
+    Description: The ID of the created Route 53 hosted zone
+    Value: !Ref HostedZone
+    Export:
+      Name: !Sub "${AWS::StackName}-HostedZoneId"
+      
+  HostedZoneNameServers:
+    Description: The Name Servers for the Route 53 hosted zone
+    Value: !Join [",", !GetAtt HostedZone.NameServers]
+    Export:
+      Name: !Sub "${AWS::StackName}-NameServers"
+
+  DomainName:
+    Description: The domain name used for the hosted zone
+    Value: !Ref DomainName
+    Export:
+      Name: !Sub "${AWS::StackName}-DomainName"

@@ -1,0 +1,26 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: CloudFormation template for creating an ACM Certificate for the website
+
+Parameters:
+  DomainName:
+    Type: String
+    Description: "The domain name for the certificate (e.g., example.com)"
+    Default: "longltt-portfolio.com"
+
+Resources:
+  # ACM Certificate for HTTPS
+  WebsiteCertificate:
+    Type: AWS::CertificateManager::Certificate
+    Properties: 
+      DomainName: !Ref DomainName
+      ValidationMethod: DNS
+      DomainValidationOptions:
+        - DomainName: !Ref DomainName
+          HostedZoneId: !ImportValue "network-HostedZoneId" # Reference the Hosted Zone created in the Networking Stack
+
+Outputs:
+  CertificateArn:
+    Description: The ARN of the ACM Certificate
+    Value: !Ref WebsiteCertificate
+    Export:
+      Name: !Sub "${AWS::StackName}-CertificateArn"

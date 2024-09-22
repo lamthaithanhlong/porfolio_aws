@@ -1,0 +1,85 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: CloudFront stack for serving content from the first S3 bucket containing "portfolio".
+
+Resources:
+  # Lambda Function to Find the S3 Bucket
+  FindPortfolioBucketLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Runtime: python3.8
+      Code:
+        ZipFile: |
+          import boto3
+          import cfnresponse
+          def handler(event, context):
+              s3 = boto3.client('s3')
+              buckets = s3.list_buckets()['Buckets']
+              portfolio_bucket = next((bucket['Name'] for bucket in buckets if 'portfolio' in bucket['Name']), None)
+              
+              if portfolio_bucket:
+                  response_data = {"BucketName": portfolio_bucket}
+                  cfnresponse.send(event, context, cfnresponse.SUCCESS, response_data)
+              else:
+                  cfnresponse.send(event, context, cfnresponse.FAILED, {})
+      Timeout: 60
+
+  # IAM Role for Lambda Execution
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties: 
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: S3ListPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:ListAllMyBuckets
+                Resource: "*"
+
+  # Custom Resource to Get S3 Bucket Name
+  PortfolioBucketNameResource:
+    Type: "Custom::PortfolioBucket"
+    Properties:
+      ServiceToken: !GetAtt FindPortfolioBucketLambda.Arn
+
+  # CloudFront Distribution
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Origins:
+          - DomainName: !Sub "${PortfolioBucketNameResource.BucketName}.s3.amazonaws.com"
+            Id: S3Origin
+            S3OriginConfig:
+              OriginAccessIdentity: ""
+        Enabled: true
+        DefaultRootObject: index.html
+        DefaultCacheBehavior:
+          TargetOriginId: S3Origin
+          ViewerProtocolPolicy: redirect-to-https  # Redirect HTTP to HTTPS
+          AllowedMethods: [ "GET", "HEAD", "OPTIONS" ]
+          CachedMethods: [ "GET", "HEAD" ]
+          ForwardedValues:
+            QueryString: false
+            Cookies:
+              Forward: none
+        PriceClass: PriceClass_100  # Use the lowest pricing class (US, Europe, Asia)
+
+Outputs:
+  CloudFrontDistributionId:
+    Description: The ID of the CloudFront distribution
+    Value: !Ref CloudFrontDistribution
+
+  CloudFrontDomainName:
+    Description: The domain name of the CloudFront distribution
+    Value: !GetAtt CloudFrontDistribution.DomainName

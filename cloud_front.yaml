@@ -1,0 +1,69 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: CloudFront stack for serving the content from the S3 bucket
+
+Parameters:
+  DomainName:
+    Type: String
+    Description: The domain name for CloudFront (optional)
+    Default: "longltt-portfolio.com"
+
+  CertificateArn:
+    Type: String
+    Description: The ARN of the ACM certificate for the CloudFront distribution (optional)
+    Default: ""  # Optional
+
+Resources:
+  # CloudFront Distribution
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Origins:
+          - DomainName: !ImportValue "S3BucketName"
+            Id: S3Origin
+            S3OriginConfig:
+              OriginAccessIdentity: ""
+        Enabled: true
+        DefaultRootObject: index.html
+        ViewerCertificate:
+          AcmCertificateArn: !If
+            - UseCertificateArn
+            - !Ref CertificateArn
+            - !Ref "AWS::NoValue"
+          SslSupportMethod: sni-only
+        Aliases:
+          - !If
+            - UseDomainName
+            - !Ref DomainName
+            - !Ref "AWS::NoValue"
+        DefaultCacheBehavior:
+          TargetOriginId: S3Origin
+          ViewerProtocolPolicy: redirect-to-https  # Redirect HTTP to HTTPS
+          AllowedMethods: [ "GET", "HEAD", "OPTIONS" ]
+          CachedMethods: [ "GET", "HEAD" ]
+          ForwardedValues:
+            QueryString: false
+            Cookies:
+              Forward: none
+        PriceClass: PriceClass_100  # Use lowest pricing class (US, Europe, Asia)
+
+Outputs:
+  CloudFrontDistributionId:
+    Description: The ID of the CloudFront distribution
+    Value: !Ref CloudFrontDistribution
+    Export:
+      Name: !Sub "${AWS::StackName}-CloudFrontDistributionId"
+
+  CloudFrontDomainName:
+    Description: The domain name of the CloudFront distribution
+    Value: !GetAtt CloudFrontDistribution.DomainName
+    Export:
+      Name: !Sub "${AWS::StackName}-CloudFrontDomainName"
+
+Conditions:
+  UseDomainName:
+    Fn::Not:
+      - Fn::Equals: [ !Ref DomainName, "" ]
+  UseCertificateArn:
+    Fn::Not:
+      - Fn::Equals: [ !Ref CertificateArn, "" ]
